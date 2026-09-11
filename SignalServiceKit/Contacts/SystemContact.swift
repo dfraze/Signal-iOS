@@ -5,6 +5,7 @@
 
 public import Contacts
 import Foundation
+import ImageIO
 
 public struct SystemContact {
     private enum Constants {
@@ -70,8 +71,62 @@ public struct SystemContact {
     // MARK: - Avatars
 
     static func avatarData(for cnContact: CNContact) -> Data? {
+        let thumbnailKeyAvailable = cnContact.isKeyAvailable(CNContactThumbnailImageDataKey)
+        let imageKeyAvailable = cnContact.isKeyAvailable(CNContactImageDataKey)
+
+        let thumbnailData = thumbnailKeyAvailable ? cnContact.thumbnailImageData : nil
+        let imageData = imageKeyAvailable ? cnContact.imageData : nil
+
         // We only use `imageData` when sharing from the share extension.
-        return cnContact.thumbnailImageData ?? cnContact.imageData
+        let avatarData: Data?
+        let source: String
+        if let thumbnailData {
+            avatarData = thumbnailData
+            source = "thumbnailImageData"
+        } else if let imageData {
+            avatarData = imageData
+            source = "imageData"
+        } else {
+            Logger.info(
+                "Contact avatar diagnostics: no avatar data; "
+                    + "thumbnailKeyAvailable=\(thumbnailKeyAvailable), "
+                    + "imageKeyAvailable=\(imageKeyAvailable)",
+            )
+            return nil
+        }
+
+        if let avatarData {
+            let prefix = avatarData.prefix(64)
+            let prefixHex = prefix.map { String(format: "%02x", $0) }.joined(separator: " ")
+            let prefixASCIIBytes = prefix.map { byte -> UInt8 in
+                return (0x20...0x7e).contains(byte) ? byte : 0x2e
+            }
+            let prefixASCII = String(bytes: prefixASCIIBytes, encoding: .ascii) ?? "<unavailable>"
+
+            let imageIOType: String
+            if
+                let imageSource = CGImageSourceCreateWithData(avatarData as CFData, nil),
+                let type = CGImageSourceGetType(imageSource)
+            {
+                imageIOType = type as String
+            } else {
+                imageIOType = "<nil>"
+            }
+
+            let signalRecognizesImage = DataImageSource(avatarData).ows_isValidImage
+            Logger.info(
+                "Contact avatar diagnostics: "
+                    + "source=\(source), bytes=\(avatarData.count), "
+                    + "thumbnailKeyAvailable=\(thumbnailKeyAvailable), "
+                    + "imageKeyAvailable=\(imageKeyAvailable), "
+                    + "imageIOType=\(imageIOType), "
+                    + "signalRecognizesImage=\(signalRecognizesImage), "
+                    + "prefix64Hex=\(prefixHex), "
+                    + "prefix64ASCII=\(prefixASCII)",
+            )
+        }
+
+        return avatarData
     }
 
     // MARK: - vCards
@@ -104,9 +159,9 @@ public struct SystemContact {
         case CNLabelPhoneNumberHomeFax:
             return OWSLocalizedString("PHONE_NUMBER_TYPE_HOME_FAX", comment: "Label for 'HomeFAX' phone numbers.")
         case CNLabelPhoneNumberWorkFax:
-            return OWSLocalizedString("PHONE_NUMBER_TYPE_WORK_FAX", comment: "Label for 'Work FAX' phone numbers.")
+            return OWSLocalizedString("PHONE_NUMBER_TYPE_WORK_FAX", comment: "Label for 'WorkFAX' phone numbers.")
         case CNLabelPhoneNumberOtherFax:
-            return OWSLocalizedString("PHONE_NUMBER_TYPE_OTHER_FAX", comment: "Label for 'Other FAX' phone numbers.")
+            return OWSLocalizedString("PHONE_NUMBER_TYPE_OTHER_FAX", comment: "Label for 'OtherFAX' phone numbers.")
         case CNLabelPhoneNumberPager:
             return OWSLocalizedString("PHONE_NUMBER_TYPE_PAGER", comment: "Label for 'Pager' phone numbers.")
         case CNLabelOther:
